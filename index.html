@@ -1,0 +1,1158 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenAgent</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<style>
+  :root {
+    --bg: #0e0e10; --bg-sidebar: #161618; --bg-elevated: #1c1c1f;
+    --border: #2a2a2e; --text: #e9e9ea; --text-dim: #9a9a9f;
+    --text-faint: #5f5f66; --accent: #5b8cff; --accent-dim: #2a3a5c;
+    --user-bubble: #242428; --danger: #e35d5d; --ok: #4caf6e;
+    --radius: 10px; --mono: "SF Mono", "JetBrains Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif; font-size: 15px; height: 100vh; overflow: hidden; }
+  #app { display: flex; height: 100vh; }
+  #sidebar { width: 260px; min-width: 260px; background: var(--bg-sidebar); border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: 14px 10px; }
+  #sidebar h1 { font-size: 16px; font-weight: 600; margin: 4px 8px 16px; letter-spacing: 0.2px; }
+  .btn-new-chat { display: flex; align-items: center; gap: 8px; background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text); padding: 10px 12px; border-radius: var(--radius); cursor: pointer; font-size: 14px; margin-bottom: 14px; transition: background 0.15s; }
+  .btn-new-chat:hover { background: #26262a; }
+  #session-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+  .session-item { padding: 9px 10px; border-radius: 8px; cursor: pointer; font-size: 13.5px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .session-item:hover { background: var(--bg-elevated); color: var(--text); }
+  .session-item.active { background: var(--accent-dim); color: var(--text); }
+  .sidebar-footer { display: flex; flex-direction: column; gap: 4px; padding-top: 10px; border-top: 1px solid var(--border); }
+  .sidebar-footer button { display: flex; align-items: center; gap: 8px; background: none; border: none; color: var(--text-dim); padding: 9px 10px; border-radius: 8px; cursor: pointer; text-align: left; font-size: 13.5px; width: 100%; }
+  .sidebar-footer button:hover { background: var(--bg-elevated); color: var(--text); }
+  #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  #chat-header { padding: 12px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+  #agent-badge { font-size: 12.5px; font-family: var(--mono); padding: 4px 10px; border-radius: 100px; background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text-dim); transition: all 0.2s; }
+  #agent-badge.working { color: var(--accent); border-color: var(--accent-dim); }
+  #agent-badge.active { color: var(--ok); border-color: var(--ok); }
+  #chat-scroll { flex: 1; overflow-y: auto; padding: 24px 0 10px; }
+  #chat-messages { max-width: 760px; margin: 0 auto; padding: 0 20px; display: flex; flex-direction: column; gap: 18px; }
+  .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--text-faint); gap: 6px; }
+  .empty-state .big { font-size: 20px; color: var(--text-dim); }
+  .msg { display: flex; flex-direction: column; gap: 6px; max-width: 100%; }
+  .msg.user { align-items: flex-end; }
+  .msg.assistant { align-items: flex-start; }
+  .msg-meta { font-size: 11.5px; font-family: var(--mono); color: var(--text-faint); padding: 0 4px; }
+  .msg-actions { display: flex; gap: 6px; padding: 0 2px; }
+  .speak-btn { background: none; border: 1px solid var(--border); color: var(--text-faint); border-radius: 100px; width: 26px; height: 26px; font-size: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
+  .speak-btn:hover { background: var(--bg-elevated); color: var(--text-dim); }
+  .speak-btn.speaking { color: var(--accent); border-color: var(--accent-dim); background: var(--accent-dim); }
+  .bubble { padding: 11px 15px; border-radius: var(--radius); line-height: 1.55; max-width: 640px; }
+  .msg.user .bubble { background: var(--user-bubble); border-top-right-radius: 3px; }
+  .msg.assistant .bubble { background: transparent; border: 1px solid var(--border); border-top-left-radius: 3px; }
+  .bubble p { margin: 0 0 10px; }
+  .bubble p:last-child { margin-bottom: 0; }
+  .bubble code { font-family: var(--mono); background: #000; padding: 2px 5px; border-radius: 4px; font-size: 0.88em; }
+  .bubble pre { background: #000; border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; overflow-x: auto; margin: 8px 0; }
+  .bubble pre code { background: none; padding: 0; }
+  .bubble ul, .bubble ol { margin: 6px 0; padding-left: 22px; }
+  .bubble table { border-collapse: collapse; margin: 8px 0; font-size: 0.92em; }
+  .bubble th, .bubble td { border: 1px solid var(--border); padding: 6px 10px; }
+
+  /* ---------- CARTES MÉDIA (images + vidéos générées) ---------- */
+
+  .media-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    margin: 8px 0;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    max-width: 512px;
+    width: 100%;
+    transition: border-color 0.15s;
+  }
+  .media-card:hover { border-color: #3a3a3e; }
+
+  .media-card .media-content {
+    position: relative;
+    background: #000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    cursor: pointer;
+  }
+  .media-card img,
+  .media-card video {
+    display: block;
+    width: 100%;
+    height: auto;
+    max-height: 512px;
+    object-fit: contain;
+    background: #000;
+  }
+  .media-card video { aspect-ratio: 16/9; }
+
+  .media-card .media-actions {
+    display: flex;
+    gap: 6px;
+    padding: 8px 10px;
+    border-top: 1px solid var(--border);
+    background: var(--bg-sidebar);
+  }
+  .media-card .media-actions button,
+  .media-card .media-actions a {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 13px;
+    font-family: inherit;
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 0.15s;
+  }
+  .media-card .media-actions button:hover,
+  .media-card .media-actions a:hover {
+    background: #26262a;
+    color: var(--text);
+    border-color: #3a3a3e;
+  }
+  .media-card .media-actions .btn-delete:hover {
+    color: var(--danger);
+    border-color: var(--danger);
+  }
+
+  .media-card .media-meta {
+    padding: 6px 10px;
+    font-size: 11px;
+    font-family: var(--mono);
+    color: var(--text-faint);
+    border-top: 1px solid var(--border);
+    background: var(--bg-sidebar);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Lightbox plein écran au clic sur l'image */
+  #media-lightbox {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.92);
+    z-index: 200;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    cursor: zoom-out;
+  }
+  #media-lightbox.open { display: flex; }
+  #media-lightbox img,
+  #media-lightbox video {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    border-radius: 8px;
+  }
+
+  /* Mobile : carte pleine largeur, boutons plus lisibles */
+  @media (max-width: 640px) {
+    .media-card { max-width: 100%; border-radius: 10px; }
+    .media-card img, .media-card video { max-height: 60vh; }
+    .media-card .media-actions button,
+    .media-card .media-actions a { padding: 10px 8px; font-size: 12px; }
+  }
+  
+  /* ---------- SIDEBAR COLLAPSE / RESPONSIVE ---------- */
+
+  #sidebar-toggle {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background 0.15s, color 0.15s;
+  }
+  #sidebar-toggle:hover { background: var(--bg-elevated); color: var(--text); }
+
+  #chat-header-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  #sidebar {
+    transition: margin-left 0.25s ease, opacity 0.2s ease;
+    overflow: hidden;
+  }
+
+  body.sidebar-collapsed #sidebar {
+    margin-left: -260px;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  /* Bouton de fermeture DANS la sidebar (visible uniquement sur mobile) */
+  #sidebar-close {
+    display: none;
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-size: 20px;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    cursor: pointer;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-left: auto;
+  }
+  #sidebar-close:hover { background: var(--bg-elevated); color: var(--text); }
+
+  #sidebar-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 4px 8px 16px;
+  }
+  #sidebar-header h1 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+  }
+
+  /* Overlay sombre derrière la sidebar sur mobile */
+  #sidebar-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 40;
+  }
+
+  /* Tablette : sidebar un peu plus étroite */
+  @media (max-width: 900px) {
+    #sidebar { width: 220px; min-width: 220px; }
+    body.sidebar-collapsed #sidebar { margin-left: -220px; }
+  }
+
+  /* Mobile : sidebar en overlay */
+  @media (max-width: 640px) {
+    #app { position: relative; }
+    #sidebar {
+      position: fixed;
+      top: 0; bottom: 0; left: 0;
+      width: 260px;
+      min-width: 260px;
+      z-index: 50;
+      margin-left: 0;
+      box-shadow: 4px 0 20px rgba(0,0,0,0.4);
+    }
+    body.sidebar-collapsed #sidebar {
+      margin-left: -260px;
+      opacity: 1;
+      pointer-events: none;
+    }
+    body:not(.sidebar-collapsed) #sidebar-backdrop {
+      display: block;
+    }
+    #sidebar-close { display: flex; }
+
+    #chat-messages { padding: 0 14px; }
+    #input-bar { padding: 10px 14px 14px; }
+    #chat-header { padding: 10px 14px; }
+    .bubble { max-width: 100%; }
+  }
+
+  @media (max-width: 380px) {
+    #agent-badge { font-size: 11px; padding: 3px 8px; }
+  }
+
+    /* INPUT BAR */
+  #input-bar { padding: 14px 20px 20px; }
+  #input-inner { max-width: 760px; margin: 0 auto; display: flex; gap: 8px; align-items: flex-end; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 14px; padding: 8px 8px 8px 12px; position: relative; }
+  #input-inner:focus-within { border-color: var(--accent); }
+  
+  .btn-icon { background: none; border: none; color: var(--text-dim); font-size: 20px; cursor: pointer; padding: 0 8px; height: 36px; display: flex; align-items: center; justify-content: center; border-radius: 8px; }
+  .btn-icon:hover { background: var(--border); color: var(--text); }
+  
+  #msg-input { flex: 1; background: none; border: none; outline: none; color: var(--text); font-size: 15px; font-family: inherit; resize: none; max-height: 160px; padding: 8px 0; }
+  #msg-input::placeholder { color: var(--text-faint); }
+  
+  #btn-model { background: var(--border); border: none; color: var(--text-dim); padding: 0 12px; border-radius: 8px; cursor: pointer; font-size: 12px; height: 36px; display: flex; align-items: center; gap: 4px; }
+  #btn-model:hover { background: #3a3a3e; }
+  
+  #send-btn { background: var(--accent); border: none; color: #fff; width: 36px; height: 36px; border-radius: 10px; cursor: pointer; font-size: 16px; flex-shrink: 0; }
+  #send-btn:disabled { background: var(--border); cursor: default; }
+
+  #mic-btn {
+    background: var(--accent); border: none; color: #fff;
+    width: 36px; height: 36px; border-radius: 10px; cursor: pointer;
+    font-size: 16px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.15s;
+  }
+  #mic-btn:hover { background: #4a7aeb; }
+  #mic-btn:disabled { background: var(--border); cursor: default; }
+  #mic-btn.recording {
+    background: var(--danger);
+    animation: pulse-rec 1.2s ease-in-out infinite;
+  }
+  #mic-btn.transcribing { opacity: 0.7; cursor: wait; }
+  @keyframes pulse-rec {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.55; }
+  }
+
+  /* MENUS DÉROULANTS */
+  #model-dropdown, #create-menu { display: none; position: absolute; bottom: 100%; background: var(--bg-sidebar); border: 1px solid var(--border); border-radius: 8px; padding: 8px; min-width: 200px; max-height: 300px; overflow-y: auto; z-index: 100; box-shadow: 0 4px 12px rgba(0,0,0,0.5); margin-bottom: 8px; }
+  #model-dropdown { right: 50px; }
+  #create-menu { left: 10px; }
+  
+  .dropdown-item { padding: 8px 10px; cursor: pointer; border-radius: 6px; font-size: 13px; color: var(--text-dim); display: flex; justify-content: space-between; align-items: center; }
+  .dropdown-item:hover { background: var(--bg-elevated); color: var(--text); }
+  .provider-tag { font-size: 10px; opacity: 0.6; background: var(--border); padding: 2px 6px; border-radius: 4px; }
+
+  /* MODALS */
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); align-items: center; justify-content: center; z-index: 100; }
+  .modal-overlay.open { display: flex; }
+  .modal { background: var(--bg-sidebar); border: 1px solid var(--border); border-radius: 14px; width: 560px; max-width: 90vw; max-height: 80vh; display: flex; flex-direction: column; }
+  .modal-header { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+  .modal-header h2 { font-size: 15px; margin: 0; font-weight: 600; }
+  .modal-close { background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 18px; line-height: 1; }
+  .modal-body { padding: 18px 20px; overflow-y: auto; }
+  .modal-footer { padding: 14px 20px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 10px; }
+  .form-group { margin-bottom: 14px; }
+  .form-group label { display: block; margin-bottom: 6px; font-size: 13px; color: var(--text-dim); }
+  .form-group input, .form-group textarea { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); padding: 10px; font-family: var(--mono); font-size: 13px; }
+  .btn-primary { background: var(--accent); border: none; color: #fff; padding: 9px 16px; border-radius: 8px; cursor: pointer; font-size: 13.5px; }
+  .status-row { display: flex; justify-content: space-between; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 13.5px; }
+  .status-row:last-child { border-bottom: none; }
+  .status-row .name { font-family: var(--mono); }
+  .status-row .model { color: var(--text-faint); font-size: 12px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .dot.ok { background: var(--ok); }
+  .dot.off { background: var(--text-faint); }
+  .status-section-title { font-size: 12px; color: var(--text-faint); margin: 18px 0 6px; }
+  .status-section-title:first-child { margin-top: 0; }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <div id="sidebar-backdrop"></div>
+  <div id="sidebar">
+    <div id="sidebar-header">
+      <h1>OpenAgent</h1>
+      <button id="sidebar-close" title="Fermer la barre latérale" aria-label="Fermer">✕</button>
+    </div>
+    <button class="btn-new-chat" id="btn-new-chat">＋ Nouveau Chat</button>
+    <div id="session-list"></div>
+    <div class="sidebar-footer">
+      <button id="btn-status">◎ Statut</button>
+      <button id="btn-settings">⚙ Paramètres</button>
+    </div>
+  </div>
+
+  <div id="main">
+    <div id="chat-header">
+      <div id="chat-header-left">
+        <button id="sidebar-toggle" title="Afficher/Masquer la barre latérale" aria-label="Toggle sidebar">☰</button>
+      </div>
+      <div id="agent-badge">Prêt</div>
+    </div>
+    <div id="chat-scroll"><div id="chat-messages"></div></div>
+    
+    <div id="input-bar">
+      <div id="input-inner">
+        <!-- Bouton + (Fichiers) -->
+        <button id="btn-attach" class="btn-icon" title="Joindre un fichier">+</button>
+        <input type="file" id="file-input" multiple style="display:none">
+        
+        <!-- Bouton ✨ (Créer Image/Vidéo) -->
+        <button id="btn-create" class="btn-icon" title="Créer un média">✨</button>
+        <div id="create-menu">
+          <div class="dropdown-item" onclick="openCreateModal('image')">🖼️ Créer une image</div>
+          <div class="dropdown-item" onclick="openCreateModal('video')">🎬 Créer une vidéo</div>
+        </div>
+        
+        <textarea id="msg-input" placeholder="Écris un message…" rows="1"></textarea>
+        
+        <!-- Bouton Modèle -->
+        <button id="btn-model">Modèle ⚙</button>
+        <div id="model-dropdown"></div>
+        
+        <button id="mic-btn" title="Dicter un message">🎤</button>
+        <button id="send-btn">↑</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL PARAMÈTRES -->
+<div class="modal-overlay" id="modal-settings">
+  <div class="modal">
+    <div class="modal-header"><h2>Paramètres — Prompt Superviseur</h2><button class="modal-close" data-close="modal-settings">✕</button></div>
+    <div class="modal-body"><textarea id="prompt-textarea" style="width:100%; min-height:240px; background:var(--bg); border:1px solid var(--border); border-radius:8px; color:var(--text); font-family:var(--mono); font-size:13px; padding:12px; resize:vertical;"></textarea></div>
+    <div class="modal-footer"><button class="btn-primary" id="btn-save-prompt">Sauvegarder</button></div>
+  </div>
+</div>
+
+<!-- MODAL AJOUT MODÈLE -->
+<div class="modal-overlay" id="modal-add-model">
+  <div class="modal">
+    <div class="modal-header"><h2>Ajouter un modèle personnalisé</h2><button class="modal-close" data-close="modal-add-model">✕</button></div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Nom du modèle</label>
+        <input type="text" id="new-model-name" placeholder="ex: meta-llama/Llama-3.3-70B-Instruct-Turbo-Free">
+      </div>
+      <div class="form-group">
+        <label>URL de base (complète)</label>
+        <input type="text" id="new-model-url" placeholder="https://api.together.ai/v1/chat/completions">
+      </div>
+      <div class="form-group">
+        <label>Clé API</label>
+        <input type="password" id="new-model-key" placeholder="sk-...">
+      </div>
+    </div>
+    <div class="modal-footer"><button class="btn-primary" id="btn-save-model">Ajouter</button></div>
+  </div>
+</div>
+
+<!-- MODAL CRÉATION MÉDIA -->
+<div class="modal-overlay" id="modal-create">
+  <div class="modal">
+    <div class="modal-header"><h2 id="create-title">Créer</h2><button class="modal-close" data-close="modal-create">✕</button></div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Prompt (description)</label>
+        <textarea id="create-prompt" style="width:100%; min-height:80px; background:var(--bg); border:1px solid var(--border); border-radius:8px; color:var(--text); padding:10px;" placeholder="Décrivez ce que vous voulez générer..."></textarea>
+      </div>
+      <div class="form-group" id="video-options" style="display:none;">
+        <label>Durée (secondes)</label>
+        <input type="number" id="create-seconds" value="8" min="4" max="12">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-primary" id="btn-do-create">Générer</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL STATUT -->
+<div class="modal-overlay" id="modal-status">
+  <div class="modal">
+    <div class="modal-header"><h2>Statut du système</h2><button class="modal-close" data-close="modal-status">✕</button></div>
+    <div class="modal-body">
+      <div class="status-section-title">Providers</div><div id="status-providers"></div>
+      <div class="status-section-title">Agents</div><div id="status-agents"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// CONFIG ZRO — clé API et modèles
+// ============================================================
+const ZRO_BASE_URL = "https://zro.moonmath.ai/v1";
+const ZRO_API_KEY = "sk-roxZr15alwrhMEBT3UzVOg";
+
+const ZRO_MODELS = [
+  { id: "deepseek-v4.1-flash", name: "DeepSeek V4.1 Flash", provider: "ZRO" },
+  { id: "glm-5.3-flash",       name: "GLM-5.3 Flash",       provider: "ZRO" },
+];
+
+// ============================================================
+// ÉTAT GLOBAL
+// ============================================================
+const API = ""; // backend local (sessions, historique, transcription, génération média)
+let sessionId = null;
+let sessions = [];
+let currentModel = "deepseek-v4.1-flash";   // modèle ZRO par défaut (recommandé)
+let currentModelName = "DeepSeek V4.1 Flash";
+let currentAttachments = [];
+let createType = 'image';
+
+marked.setOptions({ breaks: true, gfm: true });
+
+function uuid() { return crypto.randomUUID ? crypto.randomUUID() : "sess-" + Date.now(); }
+function escapeHtml(str) { const div = document.createElement("div"); div.textContent = str; return div.innerHTML; }
+
+// ============================================================
+// SESSIONS (backend local, avec fallback localStorage si absent)
+// ============================================================
+const LS_SESSIONS_KEY = "openagent_sessions_v1";
+const LS_HISTORY_PREFIX = "openagent_history_";
+
+function lsGetSessions() {
+  try { return JSON.parse(localStorage.getItem(LS_SESSIONS_KEY) || "[]"); } catch (_) { return []; }
+}
+function lsSetSessions(list) {
+  try { localStorage.setItem(LS_SESSIONS_KEY, JSON.stringify(list)); } catch (_) {}
+}
+function lsGetHistory(id) {
+  try { return JSON.parse(localStorage.getItem(LS_HISTORY_PREFIX + id) || "[]"); } catch (_) { return []; }
+}
+function lsSetHistory(id, history) {
+  try { localStorage.setItem(LS_HISTORY_PREFIX + id, JSON.stringify(history)); } catch (_) {}
+}
+
+let backendAvailable = null;
+
+async function backendSessionsAvailable() {
+  if (backendAvailable !== null) return backendAvailable;
+  try {
+    const res = await fetch(`${API}/api/sessions`, { method: "GET" });
+    backendAvailable = res.ok;
+  } catch (_) { backendAvailable = false; }
+  return backendAvailable;
+}
+
+async function loadSessions() {
+  if (await backendSessionsAvailable()) {
+    try {
+      const res = await fetch(`${API}/api/sessions`);
+      sessions = await res.json();
+    } catch (_) { sessions = lsGetSessions(); }
+  } else {
+    sessions = lsGetSessions();
+  }
+  renderSessionList();
+}
+
+function renderSessionList() {
+  const list = document.getElementById("session-list");
+  list.innerHTML = "";
+  sessions.forEach(s => {
+    const item = document.createElement("div");
+    item.className = "session-item" + (s.session_id === sessionId ? " active" : "");
+    item.textContent = s.preview || s.session_id;
+    item.onclick = () => openSession(s.session_id);
+    list.appendChild(item);
+  });
+}
+
+async function openSession(id) {
+  stopSpeaking(); sessionId = id; renderSessionList();
+  if (isMobileSidebar()) applySidebarState(true);
+  let history = [];
+  if (await backendSessionsAvailable()) {
+    try {
+      const res = await fetch(`${API}/api/history/${id}`);
+      history = await res.json();
+    } catch (_) { history = lsGetHistory(id); }
+  } else {
+    history = lsGetHistory(id);
+  }
+  const container = document.getElementById("chat-messages");
+  container.innerHTML = "";
+  if (history.length === 0) renderEmptyState();
+  else history.forEach(m => appendMessage(m.role, m.content, m.agent));
+  scrollToBottom();
+}
+
+function newChat() {
+  stopSpeaking(); sessionId = uuid();
+  document.getElementById("chat-messages").innerHTML = "";
+  renderEmptyState(); renderSessionList();
+  document.getElementById("msg-input").focus();
+}
+
+function renderEmptyState() {
+  document.getElementById("chat-messages").innerHTML = `<div class="empty-state"><div class="big">OpenAgent</div><div>Pose une question, ou décris ce que tu veux accomplir.</div></div>`;
+}
+
+// Persiste le message courant (backend si dispo, sinon localStorage)
+async function persistMessage(role, content, agent) {
+  if (await backendSessionsAvailable()) return; // le backend gère déjà l'historique
+  const history = lsGetHistory(sessionId);
+  history.push({ role, content, agent: agent || null });
+  lsSetHistory(sessionId, history);
+  const list = lsGetSessions().filter(s => s.session_id !== sessionId);
+  const preview = (history.find(m => m.role === "user")?.content || sessionId).slice(0, 40);
+  list.unshift({ session_id: sessionId, preview });
+  lsSetSessions(list);
+}
+
+// ============================================================
+// CHAT — messages
+// ============================================================
+function appendMessage(role, content, agent) {
+  const container = document.getElementById("chat-messages");
+  if (container.querySelector(".empty-state")) container.innerHTML = "";
+  const msgDiv = document.createElement("div");
+  msgDiv.className = "msg " + role;
+  if (role === "assistant" && agent && agent !== "SUPERVISOR" && agent !== "ZRO") {
+    const meta = document.createElement("div"); meta.className = "msg-meta"; meta.textContent = agent; msgDiv.appendChild(meta);
+  }
+  const bubble = document.createElement("div"); bubble.className = "bubble";
+  if (role === "assistant") bubble.innerHTML = marked.parse(content); else bubble.textContent = content;
+  msgDiv.appendChild(bubble);
+  if (role === "assistant") {
+    const actions = document.createElement("div"); actions.className = "msg-actions";
+    const speakBtn = document.createElement("button"); speakBtn.className = "speak-btn"; speakBtn.textContent = "🔊"; speakBtn.title = "Écouter";
+    speakBtn.onclick = () => toggleSpeak(content, speakBtn);
+    actions.appendChild(speakBtn); msgDiv.appendChild(actions);
+  }
+  container.appendChild(msgDiv);
+  return msgDiv;
+}
+
+// ============================================================
+// LECTURE VOCALE
+// ============================================================
+let activeSpeechBtn = null;
+function stripMarkdownForSpeech(md) { return md.replace(/```[\s\S]*?```/g, " Bloc de code. ").replace(/`([^`]+)`/g, "$1").replace(/!\[(.*?)\]\(.*?\)/g, "$1").replace(/\[(.*?)\]\(.*?\)/g, "$1").replace(/[#>*_~]/g, "").replace(/\s+/g, " ").trim(); }
+function resetSpeechBtn(btn) { if (!btn) return; btn.textContent = "🔊"; btn.classList.remove("speaking"); }
+function toggleSpeak(rawText, btn) {
+  if (!("speechSynthesis" in window)) { btn.title = "Non supporté"; return; }
+  if (activeSpeechBtn === btn) { window.speechSynthesis.cancel(); resetSpeechBtn(btn); activeSpeechBtn = null; return; }
+  window.speechSynthesis.cancel(); if (activeSpeechBtn) resetSpeechBtn(activeSpeechBtn);
+  const plainText = stripMarkdownForSpeech(rawText); if (!plainText) return;
+  const utterance = new SpeechSynthesisUtterance(plainText); utterance.lang = "fr-FR"; utterance.rate = 1.0;
+  const onStop = () => { resetSpeechBtn(btn); if (activeSpeechBtn === btn) activeSpeechBtn = null; };
+  utterance.onend = onStop; utterance.onerror = onStop;
+  btn.textContent = "⏹"; btn.classList.add("speaking"); activeSpeechBtn = btn;
+  window.speechSynthesis.speak(utterance);
+}
+function stopSpeaking() { if ("speechSynthesis" in window) window.speechSynthesis.cancel(); if (activeSpeechBtn) resetSpeechBtn(activeSpeechBtn); activeSpeechBtn = null; }
+
+function setBadge(text, state) { const badge = document.getElementById("agent-badge"); badge.textContent = text; badge.className = state || ""; }
+function scrollToBottom() { const scroll = document.getElementById("chat-scroll"); scroll.scrollTop = scroll.scrollHeight; }
+
+// ============================================================
+// APPEL ZRO (OpenAI-compatible)
+// ============================================================
+async function callZro(modelId, messages) {
+  const res = await fetch(`${ZRO_BASE_URL}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${ZRO_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: modelId,
+      messages,
+      temperature: 0.7,
+      stream: false,
+    }),
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(`ZRO ${res.status}: ${txt.slice(0, 300) || "erreur inconnue"}`);
+  }
+  const data = await res.json();
+  return data.choices?.[0]?.message?.content ?? "";
+}
+
+// ============================================================
+// ENVOI DE MESSAGE
+// ============================================================
+async function sendMessage() {
+  const input = document.getElementById("msg-input");
+  const text = input.value.trim();
+  if (!text && currentAttachments.length === 0) return;
+  if (!sessionId) sessionId = uuid();
+
+  let displayMsg = text;
+  if (currentAttachments.length > 0) displayMsg += `\n\n[${currentAttachments.length} fichier(s) joint(s)]`;
+  appendMessage("user", displayMsg, null);
+  await persistMessage("user", displayMsg, null);
+
+  input.value = ""; autoResize(input); scrollToBottom();
+  setBadge("Analyse…", "working");
+  document.getElementById("send-btn").disabled = true;
+
+  try {
+    // Reconstruire l'historique depuis le DOM
+    const history = [];
+    document.querySelectorAll("#chat-messages .msg").forEach(m => {
+      const role = m.classList.contains("user") ? "user" : "assistant";
+      const bubble = m.querySelector(".bubble");
+      if (!bubble) return;
+      const content = m.classList.contains("user") ? bubble.textContent : bubble.innerText;
+      if (content.trim()) history.push({ role, content });
+    });
+
+    // Prompt système superviseur (localStorage si backend absent)
+    let systemPrompt = "";
+    if (await backendSessionsAvailable()) {
+      try {
+        const sys = await fetch(`${API}/api/settings/supervisor_prompt`).then(r => r.json());
+        systemPrompt = sys.value || "";
+      } catch (_) {}
+    }
+    if (!systemPrompt) {
+      systemPrompt = localStorage.getItem("openagent_supervisor_prompt") ||
+        "Tu es OpenAgent, un assistant utile et concis. Réponds en français.";
+    }
+
+    const messages = [
+      { role: "system", content: systemPrompt },
+      ...history.slice(-20),
+    ];
+
+    let reply;
+    let agentLabel;
+    if (currentModel && ZRO_MODELS.some(m => m.id === currentModel)) {
+      // Modèle ZRO sélectionné
+      reply = await callZro(currentModel, messages);
+      agentLabel = currentModelName || "ZRO";
+    } else if (currentModel) {
+      // Modèle backend custom
+      if (await backendSessionsAvailable()) {
+        const res = await fetch(`${API}/api/chat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session_id: sessionId, message: text, model: currentModel, attachments: currentAttachments }),
+        });
+        if (!res.ok) { const err = await res.json().catch(() => ({ detail: "Erreur serveur" })); throw new Error(err.detail || "Erreur serveur"); }
+        const data = await res.json();
+        reply = data.reply; agentLabel = data.agent;
+      } else {
+        throw new Error("Modèle custom disponible uniquement avec backend.");
+      }
+    } else {
+      // Fallback : backend auto
+      if (await backendSessionsAvailable()) {
+        const res = await fetch(`${API}/api/chat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session_id: sessionId, message: text, model: null, attachments: currentAttachments }),
+        });
+        if (!res.ok) { const err = await res.json().catch(() => ({ detail: "Erreur serveur" })); throw new Error(err.detail || "Erreur serveur"); }
+        const data = await res.json();
+        reply = data.reply; agentLabel = data.agent;
+      } else {
+        // Pas de backend : utilise DeepSeek par défaut
+        reply = await callZro("deepseek-v4.1-flash", messages);
+        agentLabel = "DeepSeek V4.1 Flash";
+      }
+    }
+
+    appendMessage("assistant", reply, agentLabel);
+    await persistMessage("assistant", reply, agentLabel);
+    setBadge(agentLabel === "SUPERVISOR" ? "Prêt" : agentLabel, "active");
+    setTimeout(() => setBadge("Prêt", ""), 2000);
+  } catch (e) {
+    stopSpeaking(); appendMessage("assistant", `⚠️ ${e.message}`, null); setBadge("Erreur", "");
+  } finally {
+    document.getElementById("send-btn").disabled = false; scrollToBottom();
+    try { await loadSessions(); } catch (_) {}
+    currentAttachments = []; document.getElementById("file-input").value = '';
+  }
+}
+
+function autoResize(el) { el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, 160) + "px"; }
+
+// ============================================================
+// FICHIERS
+// ============================================================
+document.getElementById('btn-attach').onclick = () => document.getElementById('file-input').click();
+document.getElementById('file-input').onchange = (e) => {
+    Array.from(e.target.files).forEach(file => {
+        const reader = new FileReader();
+        reader.onload = () => {
+            currentAttachments.push({ type: file.type, name: file.name, data: reader.result.split(',')[1] });
+        };
+        if (file.type.startsWith('image') || file.type.startsWith('video')) reader.readAsDataURL(file);
+        else reader.readAsText(file);
+    });
+};
+
+// ============================================================
+// CRÉATION MÉDIA (backend requis)
+// ============================================================
+document.getElementById('btn-create').onclick = (e) => {
+  e.stopPropagation();
+  const menu = document.getElementById('create-menu');
+  menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+};
+document.addEventListener('click', (e) => {
+  const menu = document.getElementById('create-menu');
+  if (menu.style.display === 'block' && !e.target.closest('#btn-create') && !e.target.closest('#create-menu')) {
+    menu.style.display = 'none';
+  }
+});
+function openCreateModal(type) {
+  createType = type;
+  document.getElementById('create-menu').style.display = 'none';
+  document.getElementById('create-title').textContent = type === 'image' ? 'Créer une image' : 'Créer une vidéo';
+  document.getElementById('video-options').style.display = type === 'video' ? 'block' : 'none';
+  document.getElementById('create-prompt').value = '';
+  openModal('modal-create');
+}
+async function doCreate() {
+  const prompt = document.getElementById('create-prompt').value.trim();
+  if (!prompt) { alert('Prompt requis'); return; }
+  if (!(await backendSessionsAvailable())) { alert("La génération média nécessite le backend."); return; }
+  const btn = document.getElementById('btn-do-create');
+  btn.disabled = true; btn.textContent = 'Génération...';
+  const payload = { prompt, type: createType, seconds: parseInt(document.getElementById('create-seconds').value) || 8 };
+  try {
+    const res = await fetch(`${API}/api/generate/media`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+    });
+    if (!res.ok) { const err = await res.json(); throw new Error(err.detail); }
+    const data = await res.json();
+    const container = document.getElementById('chat-messages');
+    if (container.querySelector('.empty-state')) container.innerHTML = '';
+    const msgDiv = document.createElement('div'); msgDiv.className = 'msg assistant';
+    const meta = document.createElement('div'); meta.className = 'msg-meta'; meta.textContent = 'AGNES'; msgDiv.appendChild(meta);
+    const bubble = document.createElement('div'); bubble.className = 'bubble';
+    bubble.style.padding = '0'; bubble.style.background = 'transparent'; bubble.style.border = 'none'; bubble.style.maxWidth = '100%';
+    bubble.appendChild(createMediaCard({ type: createType, url: data.url, prompt }));
+    msgDiv.appendChild(bubble); container.appendChild(msgDiv); scrollToBottom();
+    closeModal('modal-create');
+  } catch (e) { alert(`Erreur : ${e.message}`); }
+  finally { btn.disabled = false; btn.textContent = 'Générer'; }
+}
+document.getElementById('btn-do-create').onclick = doCreate;
+
+// ============================================================
+// MENU MODÈLE
+// ============================================================
+async function loadModels() {
+    const dropdown = document.getElementById('model-dropdown');
+    dropdown.innerHTML = '';
+
+    // --- Section ZRO ---
+    const zroTitle = document.createElement('div');
+    zroTitle.className = 'dropdown-item';
+    zroTitle.style.cssText = 'font-size:11px;color:var(--text-faint);cursor:default;pointer-events:none;text-transform:uppercase;letter-spacing:1px;';
+    zroTitle.textContent = 'ZRO (direct)';
+    dropdown.appendChild(zroTitle);
+
+    ZRO_MODELS.forEach(m => {
+        const div = document.createElement('div');
+        div.className = 'dropdown-item';
+        div.innerHTML = `<span>${escapeHtml(m.name)}</span><span class="provider-tag">ZRO</span>`;
+        if (currentModel === m.id) div.style.background = 'var(--accent-dim)';
+        div.onclick = () => {
+            currentModel = m.id;
+            currentModelName = m.name;
+            updateModelBtn(m.name);
+            dropdown.style.display = 'none';
+        };
+        dropdown.appendChild(div);
+    });
+
+    // --- Section Auto / backend ---
+    const sep = document.createElement('div');
+    sep.style.cssText = 'height:1px;background:var(--border);margin:6px 0;';
+    dropdown.appendChild(sep);
+
+    const autoDiv = document.createElement('div');
+    autoDiv.className = 'dropdown-item';
+    autoDiv.innerHTML = `<span>🤖 Auto (backend)</span><span class="provider-tag">Défaut</span>`;
+    if (!currentModel) autoDiv.style.background = 'var(--accent-dim)';
+    autoDiv.onclick = () => { currentModel = null; currentModelName = null; updateModelBtn(); dropdown.style.display = 'none'; };
+    dropdown.appendChild(autoDiv);
+
+    // --- Modèles backend (si disponibles) ---
+    if (await backendSessionsAvailable()) {
+      try {
+          const res = await fetch(`${API}/api/models`);
+          const models = await res.json();
+          models.forEach(m => {
+              const div = document.createElement('div');
+              div.className = 'dropdown-item';
+              div.innerHTML = `<span>${escapeHtml(m.name)}</span><span class="provider-tag">${m.provider}</span>`;
+              if (currentModel === m.id) div.style.background = 'var(--accent-dim)';
+              div.onclick = () => { currentModel = m.id; currentModelName = m.name; updateModelBtn(m.name); dropdown.style.display = 'none'; };
+              dropdown.appendChild(div);
+          });
+      } catch (_) {}
+    }
+
+    const addDiv = document.createElement('div');
+    addDiv.className = 'dropdown-item';
+    addDiv.innerHTML = `<span>➕ Ajouter un modèle...</span>`;
+    addDiv.style.color = 'var(--accent)';
+    addDiv.onclick = () => { openModal('modal-add-model'); dropdown.style.display = 'none'; };
+    dropdown.appendChild(addDiv);
+}
+
+function updateModelBtn(name = null) {
+    const btn = document.getElementById('btn-model');
+    if (name) {
+        const shortName = name.length > 18 ? name.substring(0, 18) + '...' : name;
+        btn.textContent = `Modèle: ${shortName}`;
+        btn.style.color = 'var(--accent)';
+    } else {
+        btn.textContent = 'Modèle ⚙';
+        btn.style.color = 'var(--text-dim)';
+    }
+}
+
+document.getElementById('btn-model').onclick = (e) => {
+    e.stopPropagation();
+    const dd = document.getElementById('model-dropdown');
+    if (dd.style.display === 'none') { loadModels(); dd.style.display = 'block'; }
+    else { dd.style.display = 'none'; }
+};
+document.addEventListener('click', (e) => {
+    const dd = document.getElementById('model-dropdown');
+    const btn = document.getElementById('btn-model');
+    if (dd.style.display === 'block' && !dd.contains(e.target) && e.target !== btn) {
+        dd.style.display = 'none';
+    }
+});
+
+// ============================================================
+// SIDEBAR
+// ============================================================
+const SIDEBAR_KEY = "openagent_sidebar_collapsed";
+function isMobileSidebar() { return window.matchMedia("(max-width: 640px)").matches; }
+function applySidebarState(collapsed) {
+  document.body.classList.toggle("sidebar-collapsed", collapsed);
+  if (!isMobileSidebar()) localStorage.setItem(SIDEBAR_KEY, collapsed ? "1" : "0");
+}
+function toggleSidebar() { applySidebarState(!document.body.classList.contains("sidebar-collapsed")); }
+function initSidebar() {
+  if (isMobileSidebar()) applySidebarState(true);
+  else applySidebarState(localStorage.getItem(SIDEBAR_KEY) === "1");
+}
+let _lastIsMobileSidebar = null;
+window.addEventListener("resize", () => {
+  const m = isMobileSidebar();
+  if (m !== _lastIsMobileSidebar) {
+    _lastIsMobileSidebar = m;
+    if (m) applySidebarState(true);
+    else applySidebarState(localStorage.getItem(SIDEBAR_KEY) === "1");
+  }
+});
+
+// ============================================================
+// CARTES MÉDIA
+// ============================================================
+let _mediaCounter = 0;
+function mediaTimestamp() {
+  const d = new Date(); const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+}
+function createMediaCard({ type, url, prompt }) {
+  const id = `media_${++_mediaCounter}_${Date.now()}`;
+  const ts = mediaTimestamp();
+  const ext = type === "video" ? "mp4" : "png";
+  const filename = `openagent_${type}_${ts}.${ext}`;
+  const card = document.createElement("div"); card.className = "media-card"; card.id = id;
+  const content = document.createElement("div"); content.className = "media-content";
+  if (type === "image") {
+    const img = document.createElement("img"); img.src = url; img.alt = prompt || "Image générée"; img.loading = "lazy";
+    img.onclick = (e) => { e.stopPropagation(); openLightbox("image", url); };
+    content.appendChild(img);
+  } else {
+    const video = document.createElement("video"); video.src = url; video.controls = true; video.preload = "metadata";
+    content.appendChild(video);
+  }
+  card.appendChild(content);
+  const actions = document.createElement("div"); actions.className = "media-actions";
+  const downloadBtn = document.createElement("a");
+  downloadBtn.href = url; downloadBtn.download = filename; downloadBtn.target = "_blank"; downloadBtn.rel = "noopener";
+  downloadBtn.innerHTML = "⬇ Télécharger";
+  downloadBtn.onclick = async (e) => {
+    e.preventDefault();
+    try {
+      const res = await fetch(url, { mode: "cors" }); if (!res.ok) throw new Error("fetch failed");
+      const blob = await res.blob(); const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob); a.download = filename;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    } catch (err) { window.open(url, "_blank", "noopener"); }
+  };
+  actions.appendChild(downloadBtn);
+  const deleteBtn = document.createElement("button"); deleteBtn.className = "btn-delete"; deleteBtn.innerHTML = "🗑 Supprimer";
+  deleteBtn.onclick = () => { if (confirm("Supprimer cette " + (type === "image" ? "image" : "vidéo") + " de la conversation ?")) card.remove(); };
+  actions.appendChild(deleteBtn);
+  card.appendChild(actions);
+  if (prompt) {
+    const meta = document.createElement("div"); meta.className = "media-meta"; meta.title = prompt;
+    meta.textContent = "Prompt : " + prompt; card.appendChild(meta);
+  }
+  return card;
+}
+function openLightbox(type, url) {
+  const lb = document.getElementById("media-lightbox");
+  const img = document.getElementById("lightbox-img"); const vid = document.getElementById("lightbox-video");
+  if (type === "image") { img.src = url; img.style.display = "block"; vid.style.display = "none"; vid.pause(); }
+  else { vid.src = url; vid.style.display = "block"; img.style.display = "none"; }
+  lb.classList.add("open");
+}
+function closeLightbox() {
+  const lb = document.getElementById("media-lightbox");
+  const vid = document.getElementById("lightbox-video");
+  lb.classList.remove("open"); vid.pause(); vid.src = "";
+}
+
+// ============================================================
+// DICTÉE VOCALE
+// ============================================================
+let mediaRecorder = null, audioChunks = [], isRecording = false, micStream = null;
+async function toggleRecording() {
+  const btn = document.getElementById("mic-btn"); if (!btn) return;
+  if (isRecording) { if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop(); return; }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { alert("Ton navigateur ne supporte pas l'enregistrement audio."); return; }
+  if (!window.MediaRecorder) { alert("MediaRecorder non supporté par ce navigateur."); return; }
+  try { micStream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+  catch (e) { alert("Impossible d'accéder au micro : " + e.message + "\n\n(Note : le micro nécessite HTTPS ou localhost.)"); return; }
+  audioChunks = [];
+  const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : (MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "");
+  mediaRecorder = mime ? new MediaRecorder(micStream, { mimeType: mime }) : new MediaRecorder(micStream);
+  mediaRecorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) audioChunks.push(e.data); };
+  mediaRecorder.onstop = async () => {
+    isRecording = false; btn.classList.remove("recording"); btn.textContent = "🎤"; btn.title = "Dicter un message";
+    if (micStream) { micStream.getTracks().forEach((t) => t.stop()); micStream = null; }
+    if (audioChunks.length === 0) return;
+    const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType || "audio/webm" }); audioChunks = [];
+    await sendAudioForTranscription(blob);
+  };
+  mediaRecorder.start(); isRecording = true; btn.classList.add("recording"); btn.textContent = "⏹"; btn.title = "Clique pour arrêter l'enregistrement";
+}
+async function sendAudioForTranscription(blob) {
+  const btn = document.getElementById("mic-btn"); const input = document.getElementById("msg-input");
+  if (!(await backendSessionsAvailable())) {
+    alert("La transcription vocale nécessite le backend.");
+    return;
+  }
+  btn.classList.add("transcribing"); btn.textContent = "…"; btn.title = "Transcription en cours…";
+  try {
+    const ext = blob.type.includes("mp4") ? "mp4" : "webm";
+    const form = new FormData(); form.append("file", blob, `dictation.${ext}`);
+    const res = await fetch(`${API}/api/transcribe`, { method: "POST", body: form });
+    if (!res.ok) { const err = await res.json().catch(() => ({ detail: "Erreur de transcription" })); throw new Error(err.detail || "Erreur de transcription"); }
+    const data = await res.json(); const text = (data.text || "").trim();
+    if (!text) { alert("Aucune parole détectée dans l'enregistrement."); return; }
+    const existing = input.value.trim(); input.value = existing ? existing + " " + text : text;
+    autoResize(input); input.focus(); input.setSelectionRange(input.value.length, input.value.length);
+  } catch (e) { alert("⚠️ " + e.message); }
+  finally { btn.classList.remove("transcribing"); btn.textContent = "🎤"; btn.title = "Dicter un message"; }
+}
+
+// ============================================================
+// MODALS
+// ============================================================
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+async function openSettingsModal() {
+  let value = "";
+  if (await backendSessionsAvailable()) {
+    try {
+      const res = await fetch(`${API}/api/settings/supervisor_prompt`);
+      const data = await res.json();
+      value = data.value || "";
+    } catch (_) {}
+  }
+  if (!value) value = localStorage.getItem("openagent_supervisor_prompt") || "";
+  document.getElementById("prompt-textarea").value = value;
+  openModal("modal-settings");
+}
+async function saveSettings() {
+  const value = document.getElementById("prompt-textarea").value;
+  localStorage.setItem("openagent_supervisor_prompt", value);
+  if (await backendSessionsAvailable()) {
+    try {
+      await fetch(`${API}/api/settings/supervisor_prompt`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ value }) });
+    } catch (_) {}
+  }
+  closeModal("modal-settings");
+}
+
+async function saveCustomModel() {
+    const name = document.getElementById('new-model-name').value;
+    const url = document.getElementById('new-model-url').value;
+    const key = document.getElementById('new-model-key').value;
+    if (!name || !url) { alert("Nom et URL requis"); return; }
+    if (!(await backendSessionsAvailable())) { alert("Ajout de modèle custom nécessite le backend."); return; }
+    try {
+        const res = await fetch(`${API}/api/models/custom`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, base_url: url, api_key: key })
+        });
+        if (!res.ok) { const err = await res.json(); throw new Error(err.detail); }
+        closeModal('modal-add-model'); loadModels();
+        document.getElementById('new-model-name').value = '';
+        document.getElementById('new-model-url').value = '';
+        document.getElementById('new-model-key').value = '';
+    } catch (e) { alert(`Erreur: ${e.message}`); }
+}
+
+async function openStatusModal() {
+  let providers = [], agents = [];
+  if (await backendSessionsAvailable()) {
+    const [provRes, agentRes] = await Promise.all([
+      fetch(`${API}/api/providers`).catch(() => ({ json: () => [] })),
+      fetch(`${API}/api/agents`).catch(() => ({ json: () => [] }))
+    ]);
+    providers = await provRes.json(); agents = await agentRes.json();
+  }
+  const zroRows = ZRO_MODELS.map(m => `
+    <div class="status-row"><div style="display:flex; align-items:center; gap:10px;"><div class="dot ok"></div><div><div class="name">ZRO · ${escapeHtml(m.id)}</div><div class="model">${escapeHtml(m.name)}</div></div></div><div>✅</div></div>
+  `).join("");
+  document.getElementById("status-providers").innerHTML = zroRows + providers.map(p => `
+    <div class="status-row"><div style="display:flex; align-items:center; gap:10px;"><div class="dot ${p.configured ? "ok" : "off"}"></div><div><div class="name">${escapeHtml(p.name)}</div><div class="model">${escapeHtml(p.model)}</div></div></div><div>${p.configured ? "✅" : "⬜"}</div></div>
+  `).join("");
+  document.getElementById("status-agents").innerHTML = agents.map(a => `
+    <div class="status-row"><div><div class="name">${escapeHtml(a.name)}</div><div class="model">${escapeHtml(a.description)}</div></div></div>
+  `).join("");
+  openModal("modal-status");
+}
+
+// ============================================================
+// EVENTS
+// ============================================================
+document.getElementById("btn-new-chat").onclick = newChat;
+document.getElementById("sidebar-toggle").onclick = toggleSidebar;
+const _sbClose = document.getElementById("sidebar-close");
+if (_sbClose) _sbClose.onclick = () => applySidebarState(true);
+const _sbBackdrop = document.getElementById("sidebar-backdrop");
+if (_sbBackdrop) _sbBackdrop.onclick = () => applySidebarState(true);
+document.getElementById("btn-settings").onclick = openSettingsModal;
+document.getElementById("btn-status").onclick = openStatusModal;
+document.getElementById("btn-save-prompt").onclick = saveSettings;
+document.getElementById("btn-save-model").onclick = saveCustomModel;
+document.getElementById("send-btn").onclick = sendMessage;
+const _micBtn = document.getElementById("mic-btn");
+if (_micBtn) _micBtn.onclick = toggleRecording;
+document.querySelectorAll(".modal-close").forEach(btn => { btn.onclick = () => closeModal(btn.dataset.close); });
+document.querySelectorAll(".modal-overlay").forEach(overlay => { overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.classList.remove("open"); }); });
+const msgInput = document.getElementById("msg-input");
+msgInput.addEventListener("input", () => autoResize(msgInput));
+msgInput.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeLightbox(); });
+
+// INIT
+(async function init() {
+  initSidebar();
+  updateModelBtn(currentModelName);
+  try { await loadSessions(); } catch (_) {}
+  newChat();
+})();
+</script>
+<!-- LIGHTBOX MÉDIA -->
+<div id="media-lightbox" onclick="closeLightbox()">
+  <img id="lightbox-img" src="" style="display:none;">
+  <video id="lightbox-video" controls style="display:none;"></video>
+</div>
+
+</body>
+</html>
